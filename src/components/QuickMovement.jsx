@@ -1,8 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getClientBalance } from '../db/db';
+import { triggerAutoSync } from '../db/supabase';
 import { formatWhatsAppMessage, openWhatsAppLink } from '../utils/whatsapp';
-import { Search, Plus, Minus, Send, CheckCircle2, AlertCircle, ArrowUpRight, ArrowDownLeft, Store } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Minus,
+  Send,
+  CheckCircle2,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Store,
+  Layers,
+  ChevronDown,
+  X,
+  Sparkles
+} from 'lucide-react';
 
 export default function QuickMovement({ onNewClientClick }) {
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
@@ -15,6 +29,12 @@ export default function QuickMovement({ onNewClientClick }) {
   const [notes, setNotes] = useState('');
   const [lastMovementFeedback, setLastMovementFeedback] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // New category inline modal
+  const [isNewCategoryOpen, setIsNewCategoryOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatColor, setNewCatColor] = useState('#22c55e');
+  const [newCatValue, setNewCatValue] = useState('');
 
   // Auto-select first crate type if not selected
   React.useEffect(() => {
@@ -54,6 +74,32 @@ export default function QuickMovement({ onNewClientClick }) {
   // Adjust quantity
   const adjustQty = (amount) => {
     setQuantity(prev => Math.max(1, prev + amount));
+  };
+
+  // Create new category inline
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+
+    try {
+      const newId = await db.crateTypes.add({
+        name: newCatName.trim(),
+        color: newCatColor,
+        unitValue: parseFloat(newCatValue) || 0,
+        isDefault: false
+      });
+
+      setSelectedCrateTypeId(newId);
+      setNewCatName('');
+      setNewCatValue('');
+      setIsNewCategoryOpen(false);
+
+      // Auto sync to cloud in background
+      triggerAutoSync();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao criar categoria.');
+    }
   };
 
   const handleRecord = async (type) => {
@@ -99,6 +145,9 @@ export default function QuickMovement({ onNewClientClick }) {
       setLastMovementFeedback(feedbackData);
       setNotes('');
       setQuantity(1);
+
+      // Subir automaticamente para a nuvem em segundo plano
+      triggerAutoSync();
     } catch (err) {
       console.error(err);
       alert('Erro ao registrar movimentação.');
@@ -246,33 +295,134 @@ export default function QuickMovement({ onNewClientClick }) {
         )}
       </div>
 
-      {/* Step 2: Crate Type Selection */}
-      <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-4 shadow-sm space-y-2.5">
-        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-          2. Tipo de Caixa / Vasilhame
-        </label>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-          {crateTypes.map((crate) => {
-            const isSelected = Number(selectedCrateTypeId) === crate.id;
-            return (
-              <button
-                key={crate.id}
-                onClick={() => setSelectedCrateTypeId(crate.id)}
-                className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-brand-600 border-brand-400 text-white shadow-md'
-                    : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
-                }`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: crate.color || '#22c55e' }}
-                ></span>
-                <span>{crate.name}</span>
-              </button>
-            );
-          })}
+      {/* Step 2: Crate Type Selection in List + New Category Option */}
+      <div className="bg-slate-800/80 border border-slate-700/70 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-brand-500" />
+            2. Tipo de Caixa / Vasilhame
+          </label>
+          <button
+            onClick={() => setIsNewCategoryOpen(true)}
+            className="text-xs font-bold text-brand-400 hover:text-brand-300 flex items-center gap-1 bg-brand-500/10 px-2 py-1 rounded-lg border border-brand-500/30 active:scale-95 transition"
+          >
+            <Sparkles className="w-3 h-3 text-brand-400" />
+            <span>+ Nova Categoria</span>
+          </button>
         </div>
+
+        {/* Crate Selection List / Dropdown */}
+        <div className="space-y-2">
+          <div className="relative">
+            <select
+              value={selectedCrateTypeId}
+              onChange={(e) => setSelectedCrateTypeId(Number(e.target.value))}
+              className="w-full bg-slate-900 text-white text-sm font-semibold p-3.5 pr-10 rounded-xl border border-slate-700 appearance-none focus:outline-none focus:border-brand-500 cursor-pointer"
+            >
+              {crateTypes.map((crate) => (
+                <option key={crate.id} value={crate.id}>
+                  {crate.name} {crate.unitValue > 0 ? `(R$ ${crate.unitValue.toFixed(2)})` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3.5 top-4 text-slate-400">
+              <ChevronDown className="w-4 h-4" />
+            </div>
+          </div>
+
+          {/* Visual Preview Tag of Selected Item */}
+          {selectedCrate && (
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-900/60 rounded-xl border border-slate-700/60 text-xs">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-3 h-3 rounded-full flex-shrink-0 shadow"
+                  style={{ backgroundColor: selectedCrate.color || '#22c55e' }}
+                ></span>
+                <span className="font-bold text-slate-200">{selectedCrate.name}</span>
+              </div>
+              <span className="text-slate-400 text-[11px]">
+                {selectedCrate.unitValue > 0 ? `Valor ref: R$ ${selectedCrate.unitValue.toFixed(2)}` : 'Sem valor unitário'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Inline Modal for Creating New Category */}
+        {isNewCategoryOpen && (
+          <div className="bg-slate-900 border border-brand-500/50 rounded-xl p-3.5 space-y-3 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-brand-400" />
+                <span>Criar Nova Categoria de Vasilhame</span>
+              </h4>
+              <button
+                onClick={() => setIsNewCategoryOpen(false)}
+                className="text-slate-400 hover:text-white p-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="space-y-2.5">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-400 block mb-1">
+                  Nome da Categoria *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="Ex: Caixa de Madeira Pequena, Tambor 50L..."
+                  className="w-full bg-slate-800 text-xs text-white p-2 rounded-lg border border-slate-700 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-400 block mb-1">
+                    Cor Visual
+                  </label>
+                  <input
+                    type="color"
+                    value={newCatColor}
+                    onChange={(e) => setNewCatColor(e.target.value)}
+                    className="w-full h-8 bg-slate-800 rounded-lg border border-slate-700 cursor-pointer p-0.5"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-400 block mb-1">
+                    Valor Estimado (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={newCatValue}
+                    onChange={(e) => setNewCatValue(e.target.value)}
+                    placeholder="Ex: 30.00"
+                    className="w-full bg-slate-800 text-xs text-white p-2 rounded-lg border border-slate-700 focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsNewCategoryOpen(false)}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white font-bold py-2 rounded-lg text-xs transition shadow"
+                >
+                  Salvar e Selecionar
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* Step 3: Quantity Controls */}

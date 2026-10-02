@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../db/db';
+import { triggerAutoSync } from '../db/supabase';
 import { X, Save, Trash2, Store, Phone, MapPin, FileText } from 'lucide-react';
 
 export default function ClientModal({ isOpen, onClose, clientToEdit = null, onSaved }) {
@@ -52,6 +53,7 @@ export default function ClientModal({ isOpen, onClose, clientToEdit = null, onSa
         });
         if (onSaved) onSaved(newId);
       }
+      triggerAutoSync();
       onClose();
     } catch (err) {
       console.error(err);
@@ -71,6 +73,7 @@ export default function ClientModal({ isOpen, onClose, clientToEdit = null, onSa
         await db.transactions.where('clientId').equals(clientToEdit.id).delete();
         await db.clients.delete(clientToEdit.id);
       });
+      triggerAutoSync();
       onClose();
     }
   };

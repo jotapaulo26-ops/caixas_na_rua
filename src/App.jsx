@@ -7,11 +7,17 @@ import ClientDetail from './components/ClientDetail';
 import ClientModal from './components/ClientModal';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
+import Login from './components/Login';
 import { initDatabaseDefaults, getGlobalStats } from './db/db';
+import { triggerAutoSync } from './db/supabase';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db/db';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return Boolean(localStorage.getItem('caixas_auth_token'));
+  });
+
   const [activeTab, setActiveTab] = useState('quick'); // 'quick', 'clients', 'dashboard', 'settings'
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -21,6 +27,8 @@ export default function App() {
   // Initialize defaults on mount
   useEffect(() => {
     initDatabaseDefaults();
+    // Auto-sync pending data on mount
+    triggerAutoSync();
   }, []);
 
   // Update alert count for bottom nav badge
@@ -32,6 +40,13 @@ export default function App() {
       setAlertCount(stats.stagnantClients.length);
     });
   }, [transactions, clients]);
+
+  const handleLogout = () => {
+    if (window.confirm('Deseja sair e bloquear o aplicativo?')) {
+      localStorage.removeItem('caixas_auth_token');
+      setIsAuthenticated(false);
+    }
+  };
 
   const handleOpenNewClient = () => {
     setClientToEdit(null);
@@ -47,10 +62,18 @@ export default function App() {
     setSelectedClientId(id);
   };
 
+  // If user is not logged in, display the Login screen
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none antialiased">
-      {/* Top Header */}
-      <Header onNewClientClick={handleOpenNewClient} />
+      {/* Top Header with Logout and User badge */}
+      <Header
+        onNewClientClick={handleOpenNewClient}
+        onLogout={handleLogout}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 pb-24">

@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { db } from './db';
 
-// Chaves de armazenamento local
 const STORAGE_URL_KEY = 'caixas_supabase_url';
 const STORAGE_KEY_KEY = 'caixas_supabase_key';
 
@@ -48,6 +47,59 @@ export function getSupabaseClient() {
 
 export const isSupabaseConfigured = () => getSupabaseConfig().isConfigured;
 
+// Estado reativo da sincronização em segundo plano
+let isSyncingInBackground = false;
+let lastSyncTimestamp = null;
+let lastSyncError = null;
+
+const syncListeners = new Set();
+export function subscribeSyncStatus(callback) {
+  syncListeners.add(callback);
+  callback({ isSyncing: isSyncingInBackground, lastSync: lastSyncTimestamp, error: lastSyncError });
+  return () => syncListeners.delete(callback);
+}
+
+function notifySyncListeners() {
+  const status = { isSyncing: isSyncingInBackground, lastSync: lastSyncTimestamp, error: lastSyncError };
+  syncListeners.forEach(cb => cb(status));
+}
+
+/**
+ * Gatilho de Sincronização Automática em Segundo Plano
+ * Executado após cada movimentação, cadastro ou quando a internet voltar
+ */
+export async function triggerAutoSync() {
+  if (isSyncingInBackground) return;
+  if (!isSupabaseConfigured() || !navigator.onLine) return;
+
+  isSyncingInBackground = true;
+  lastSyncError = null;
+  notifySyncListeners();
+
+  try {
+    const res = await syncLocalToSupabase();
+    if (res.success) {
+      lastSyncTimestamp = new Date();
+      lastSyncError = null;
+    } else {
+      lastSyncError = res.error || res.reason;
+    }
+  } catch (err) {
+    lastSyncError = err.message;
+  } finally {
+    isSyncingInBackground = false;
+    notifySyncListeners();
+  }
+}
+
+// Inicia listeners automáticos quando a conexão restabelecer
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[AutoSync] Conexão restabelecida. Sincronizando dados...');
+    triggerAutoSync();
+  });
+}
+
 /**
  * Testa a conexão com o banco Supabase
  */
@@ -60,7 +112,6 @@ export async function testSupabaseConnection() {
   try {
     const { data, error } = await client.from('crate_types').select('id').limit(1);
     if (error) {
-      // Se a tabela ainda não foi criada, alerta sobre o SQL
       if (error.code === '42P01') {
         return {
           success: false,
@@ -131,6 +182,7 @@ export async function syncLocalToSupabase() {
       if (errTrans) throw errTrans;
     }
 
+    lastSyncTimestamp = new Date();
     return { success: true };
   } catch (error) {
     console.error('Erro ao sincronizar com Supabase:', error);

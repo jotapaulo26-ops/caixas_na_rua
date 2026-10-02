@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Package, WifiOff, PlusCircle, Cloud, CloudOff } from 'lucide-react';
-import { isSupabaseConfigured } from '../db/supabase';
+import { Package, WifiOff, PlusCircle, Cloud, LogOut, RefreshCw } from 'lucide-react';
+import { isSupabaseConfigured, subscribeSyncStatus } from '../db/supabase';
 
-export default function Header({ onNewClientClick }) {
+export default function Header({ onNewClientClick, onLogout }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [syncInfo, setSyncInfo] = useState({ isSyncing: false, lastSync: null, error: null });
   const hasCloud = isSupabaseConfigured();
 
   useEffect(() => {
@@ -13,9 +14,12 @@ export default function Header({ onNewClientClick }) {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    const unsubscribe = subscribeSyncStatus(setSyncInfo);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      unsubscribe();
     };
   }, []);
 
@@ -27,38 +31,62 @@ export default function Header({ onNewClientClick }) {
             <Package className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-tight leading-tight">
-              Caixas na Rua
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-bold text-white tracking-tight leading-tight">
+                Caixas na Rua
+              </h1>
+              <span className="text-[10px] font-semibold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                Jançanti
+              </span>
+            </div>
+
             <div className="flex items-center gap-2 mt-0.5">
               {isOnline ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  {hasCloud ? 'Online / Nuvem' : 'Online / Local'}
-                </span>
+                hasCloud ? (
+                  syncInfo.isSyncing ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-400">
+                      <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                      Sincronizando nuvem...
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                      <Cloud className="w-3 h-3 text-sky-400" />
+                      Nuvem Sincronizada
+                    </span>
+                  )
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Online / Local
+                  </span>
+                )
               ) : (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-400">
                   <WifiOff className="w-3 h-3" />
-                  Modo Offline Ativo
+                  Modo Offline
                 </span>
               )}
-
-              {hasCloud ? (
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-sky-400 bg-sky-950/60 px-1.5 py-0.2 rounded border border-sky-800">
-                  <Cloud className="w-2.5 h-2.5" /> Supabase
-                </span>
-              ) : null}
             </div>
           </div>
         </div>
 
-        <button
-          onClick={onNewClientClick}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700 transition"
-        >
-          <PlusCircle className="w-4 h-4 text-brand-500" />
-          <span>+ Cliente</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onNewClientClick}
+            className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-700 transition"
+          >
+            <PlusCircle className="w-3.5 h-3.5 text-brand-500" />
+            <span>+ Cliente</span>
+          </button>
+
+          <button
+            onClick={onLogout}
+            title="Sair do aplicativo"
+            className="p-2 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 active:scale-95 rounded-xl border border-slate-700 transition"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </header>
   );
