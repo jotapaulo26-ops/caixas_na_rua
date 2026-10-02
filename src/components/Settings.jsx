@@ -1,8 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, exportAllDataJSON, exportCSVReport, importDataJSON, initDatabaseDefaults } from '../db/db';
-import { isSupabaseConfigured, syncLocalToSupabase, syncSupabaseToLocal } from '../db/supabase';
-import { Download, Upload, Plus, Trash2, FileSpreadsheet, RefreshCw, Layers, ShieldCheck, Cloud, CloudUpload, CloudDownload, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  clearSupabaseConfig,
+  testSupabaseConnection,
+  syncLocalToSupabase,
+  syncSupabaseToLocal
+} from '../db/supabase';
+import {
+  Download,
+  Upload,
+  Trash2,
+  FileSpreadsheet,
+  RefreshCw,
+  Layers,
+  ShieldCheck,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  CheckCircle2,
+  AlertCircle,
+  Key,
+  Database,
+  ExternalLink,
+  Copy
+} from 'lucide-react';
 
 export default function Settings() {
   const crateTypes = useLiveQuery(() => db.crateTypes.toArray()) || [];
@@ -12,10 +36,50 @@ export default function Settings() {
   const [newTypeValue, setNewTypeValue] = useState('');
   const [isAddingType, setIsAddingType] = useState(false);
 
-  // Cloud sync state
-  const isCloudReady = isSupabaseConfigured();
-  const [syncStatus, setSyncStatus] = useState(null);
+  // Cloud configuration
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [isCloudConfigOpen, setIsCloudConfigOpen] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
+
+  useEffect(() => {
+    const config = getSupabaseConfig();
+    setSupabaseUrl(config.url);
+    setSupabaseKey(config.key);
+  }, []);
+
+  const handleSaveCloudConfig = async (e) => {
+    e.preventDefault();
+    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
+      alert('Por favor, informe a URL e a Chave Anon do Supabase.');
+      return;
+    }
+
+    saveSupabaseConfig(supabaseUrl, supabaseKey);
+    setIsTesting(true);
+    setSyncStatus(null);
+
+    const test = await testSupabaseConnection();
+    setIsTesting(false);
+
+    if (test.success) {
+      setSyncStatus({ type: 'success', text: 'Conectado com sucesso ao Supabase!' });
+      setIsCloudConfigOpen(false);
+    } else {
+      setSyncStatus({ type: 'error', text: test.error });
+    }
+  };
+
+  const handleDisconnectCloud = () => {
+    if (window.confirm('Deseja desconectar o projeto Supabase deste aparelho?')) {
+      clearSupabaseConfig();
+      setSupabaseUrl('');
+      setSupabaseKey('');
+      setSyncStatus({ type: 'info', text: 'Supabase desconectado. O app voltou ao modo 100% local.' });
+    }
+  };
 
   const handleSyncToCloud = async () => {
     setIsSyncing(true);
@@ -23,7 +87,7 @@ export default function Settings() {
     try {
       const res = await syncLocalToSupabase();
       if (res.success) {
-        setSyncStatus({ type: 'success', text: 'Dados enviados para a nuvem Supabase com sucesso!' });
+        setSyncStatus({ type: 'success', text: 'Dados enviados para o Supabase com sucesso!' });
       } else {
         setSyncStatus({ type: 'error', text: res.error || res.reason || 'Erro ao sincronizar' });
       }
@@ -40,7 +104,7 @@ export default function Settings() {
     try {
       const res = await syncSupabaseToLocal();
       if (res.success) {
-        setSyncStatus({ type: 'success', text: 'Dados baixados da nuvem e atualizados no celular!' });
+        setSyncStatus({ type: 'success', text: 'Dados baixados da nuvem e salvos no celular!' });
       } else {
         setSyncStatus({ type: 'error', text: res.error || res.reason || 'Erro ao baixar dados' });
       }
@@ -72,7 +136,7 @@ export default function Settings() {
       alert('Você precisa ter pelo menos um tipo de caixa cadastrado.');
       return;
     }
-    if (window.confirm(`Deseja apagar o tipo "${name}"? Movimentações existentes com este tipo serão mantidas.`)) {
+    if (window.confirm(`Deseja apagar o tipo "${name}"?`)) {
       await db.crateTypes.delete(id);
     }
   };
@@ -99,7 +163,7 @@ export default function Settings() {
   };
 
   const handleResetData = async () => {
-    if (window.confirm('ATENÇÃO: Deseja realmente zerar todos os dados e recarregar os dados de demonstração? Faça um backup antes se quiser guardar os dados atuais!')) {
+    if (window.confirm('Deseja realmente recarregar os dados de exemplo?')) {
       await db.transaction('rw', db.clients, db.crateTypes, db.transactions, async () => {
         await db.clients.clear();
         await db.crateTypes.clear();
@@ -110,38 +174,46 @@ export default function Settings() {
     }
   };
 
+  const isConfigured = getSupabaseConfig().isConfigured;
+
   return (
     <div className="max-w-md mx-auto px-4 py-4 space-y-4">
-      {/* Supabase Cloud Sync Section */}
+      {/* Supabase Cloud Connection Card */}
       <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Cloud className="w-4 h-4 text-sky-400" />
-            <span>Nuvem Supabase</span>
-          </h3>
-          {isCloudReady ? (
-            <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Conectado
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/40">
-              Apenas Local
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+              <Database className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                Supabase: "Coletor de Caixas"
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                {isConfigured ? 'Projeto vinculado' : 'Nenhum projeto conectado'}
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+              isConfigured
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+            }`}
+          >
+            {isConfigured ? 'Conectado' : 'Apenas Local'}
+          </span>
         </div>
 
-        {isCloudReady ? (
-          <div className="space-y-2">
-            <p className="text-xs text-slate-400">
-              Sincronize os dados do seu celular com seu banco na nuvem Supabase para compartilhar com outros aparelhos.
-            </p>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
+        {/* Sync Buttons if connected */}
+        {isConfigured && (
+          <div className="space-y-2 pt-1">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 disabled={isSyncing}
                 onClick={handleSyncToCloud}
-                className="py-2.5 px-3 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow transition"
+                className="py-2.5 px-3 bg-sky-600 hover:bg-sky-500 active:scale-95 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow transition"
               >
                 <CloudUpload className="w-4 h-4" />
                 <span>Enviar p/ Nuvem</span>
@@ -150,31 +222,97 @@ export default function Settings() {
               <button
                 disabled={isSyncing}
                 onClick={handleSyncFromCloud}
-                className="py-2.5 px-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-600 transition"
+                className="py-2.5 px-3 bg-slate-700 hover:bg-slate-600 active:scale-95 disabled:opacity-50 text-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border border-slate-600 transition"
               >
                 <CloudDownload className="w-4 h-4" />
                 <span>Baixar da Nuvem</span>
               </button>
             </div>
-          </div>
-        ) : (
-          <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/70 text-xs space-y-2">
-            <p className="text-slate-300 font-medium">
-              💡 Para ativar a nuvem Supabase:
-            </p>
-            <ol className="list-decimal list-inside text-slate-400 space-y-1 text-[11px]">
-              <li>Crie um projeto grátis no <span className="text-sky-400">supabase.com</span></li>
-              <li>Execute o script <span className="text-brand-400 font-mono">supabase_schema.sql</span> no SQL Editor</li>
-              <li>Preencha a URL e a Anon Key no arquivo <span className="text-amber-400 font-mono">.env</span></li>
-            </ol>
+
+            <div className="flex items-center justify-between text-xs pt-1">
+              <button
+                onClick={() => setIsCloudConfigOpen(!isCloudConfigOpen)}
+                className="text-sky-400 hover:underline text-[11px]"
+              >
+                {isCloudConfigOpen ? 'Ocultar Credenciais' : 'Alterar Credenciais'}
+              </button>
+              <button
+                onClick={handleDisconnectCloud}
+                className="text-rose-400 hover:underline text-[11px]"
+              >
+                Desconectar
+              </button>
+            </div>
           </div>
         )}
 
+        {/* Cloud Credentials Form */}
+        {(!isConfigured || isCloudConfigOpen) && (
+          <form onSubmit={handleSaveCloudConfig} className="bg-slate-900/90 p-3 rounded-xl border border-slate-700 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                Credenciais do Projeto no Supabase
+              </span>
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
+              >
+                Painel Supabase <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">
+                Project URL (https://xxxx.supabase.co)
+              </label>
+              <input
+                type="url"
+                required
+                value={supabaseUrl}
+                onChange={(e) => setSupabaseUrl(e.target.value)}
+                placeholder="https://sua-id.supabase.co"
+                className="w-full bg-slate-800 text-xs text-white p-2 rounded-lg border border-slate-700 focus:outline-none focus:border-sky-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-semibold text-slate-400 block mb-0.5">
+                Anon Public Key (chave pública do projeto)
+              </label>
+              <input
+                type="text"
+                required
+                value={supabaseKey}
+                onChange={(e) => setSupabaseKey(e.target.value)}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..."
+                className="w-full bg-slate-800 text-xs text-white p-2 rounded-lg border border-slate-700 focus:outline-none focus:border-sky-500 font-mono"
+              />
+            </div>
+
+            <div className="pt-1">
+              <button
+                type="submit"
+                disabled={isTesting}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition shadow"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{isTesting ? 'Testando Conexão...' : 'Conectar Projeto Supabase'}</span>
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Sync Status Banner */}
         {syncStatus && (
           <div
             className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
               syncStatus.type === 'success'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : syncStatus.type === 'info'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
                 : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
             }`}
           >
@@ -183,7 +321,7 @@ export default function Settings() {
             ) : (
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
             )}
-            <span>{syncStatus.text}</span>
+            <span className="leading-tight">{syncStatus.text}</span>
           </div>
         )}
       </div>
@@ -203,7 +341,6 @@ export default function Settings() {
           </button>
         </div>
 
-        {/* Add Type Form */}
         {isAddingType && (
           <form onSubmit={handleAddCrateType} className="bg-slate-900 p-3 rounded-xl border border-slate-700 space-y-2.5">
             <div>
@@ -220,7 +357,7 @@ export default function Settings() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Cor de Identificação</label>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Cor</label>
                 <input
                   type="color"
                   value={newTypeColor}
@@ -229,7 +366,7 @@ export default function Settings() {
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Valor Unitário Estimado (R$)</label>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">Valor Unitário (R$)</label>
                 <input
                   type="number"
                   step="0.5"
@@ -250,7 +387,6 @@ export default function Settings() {
           </form>
         )}
 
-        {/* List of current crate types */}
         <div className="space-y-1.5">
           {crateTypes.map((ct) => (
             <div
@@ -286,36 +422,30 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Backup and Data Export */}
+      {/* Backup and Local Data */}
       <div className="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
           <span>Segurança & Backup Local</span>
         </h3>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Seus dados ficam 100% gravados na memória local do celular (mesmo offline). Exporte cópias de segurança a qualquer momento.
-        </p>
 
         <div className="space-y-2 pt-1">
-          {/* Download JSON */}
           <button
             onClick={exportAllDataJSON}
             className="w-full bg-slate-700 hover:bg-slate-600 active:scale-98 text-slate-200 text-xs font-bold py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-2 transition"
           >
             <Download className="w-4 h-4 text-brand-400" />
-            <span>Fazer Download do Backup Completo (.JSON)</span>
+            <span>Fazer Download do Backup (.JSON)</span>
           </button>
 
-          {/* Download CSV for Excel */}
           <button
             onClick={exportCSVReport}
             className="w-full bg-slate-700 hover:bg-slate-600 active:scale-98 text-slate-200 text-xs font-bold py-2.5 px-3 rounded-xl border border-slate-600 flex items-center justify-center gap-2 transition"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Exportar Planilha Excel de Movimentações (.CSV)</span>
+            <span>Exportar Planilha Excel (.CSV)</span>
           </button>
 
-          {/* Import JSON */}
           <label className="w-full bg-slate-900 hover:bg-slate-850 active:scale-98 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition">
             <Upload className="w-4 h-4 text-sky-400" />
             <span>Restaurar Dados a Partir de Backup</span>
@@ -330,19 +460,18 @@ export default function Settings() {
       </div>
 
       {/* Reset System */}
-      <div className="pt-2">
+      <div className="pt-1">
         <button
           onClick={handleResetData}
           className="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold py-2 px-3 rounded-xl border border-rose-500/30 flex items-center justify-center gap-2 transition"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>Restaurar Dados de Exemplo / Limpar</span>
+          <span>Restaurar Dados de Exemplo</span>
         </button>
       </div>
 
-      {/* App Footer Info */}
-      <div className="text-center text-[11px] text-slate-500 pt-3">
-        Caixas na Rua v1.0 • PWA Offline-First
+      <div className="text-center text-[11px] text-slate-500 pt-2">
+        Caixas na Rua v1.0 • GitHub: <a href="https://github.com/jotapaulo26-ops/caixas_na_rua" target="_blank" rel="noreferrer" className="text-slate-400 hover:underline">caixas_na_rua</a>
       </div>
     </div>
   );
