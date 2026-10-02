@@ -2,10 +2,13 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('CaixasNaRuaDB');
 
-db.version(1).stores({
+// Database schema version 2 with drivers and hubReturns (Ponto de Devolucao)
+db.version(2).stores({
   clients: '++id, name, phone, address, notes, createdAt',
   crateTypes: '++id, name, color, unitValue, isDefault',
-  transactions: '++id, clientId, crateTypeId, type, quantity, date, notes'
+  transactions: '++id, clientId, crateTypeId, type, quantity, date, notes, driverId, driverName',
+  drivers: '++id, name, phone, password, createdAt',
+  hubReturns: '++id, driverId, driverName, crateTypeId, quantity, date, notes'
 });
 
 // Seed initial crate types if database is fresh
@@ -20,47 +23,38 @@ export async function initDatabaseDefaults() {
       { name: 'Caixa Térmica / Isopor', color: '#ec4899', unitValue: 50.0, isDefault: false },
     ]);
   }
+}
 
-  const clientCount = await db.clients.count();
-  if (clientCount === 0) {
-    // Add sample client so new user sees how it looks immediately
-    const sampleId = await db.clients.add({
-      name: 'Supermercado Exemplo (Demonstração)',
-      phone: '11999999999',
-      address: 'Rua Principal, 100 - Centro',
-      notes: 'Recebimento pela doca dos fundos',
-      createdAt: new Date().toISOString()
-    });
-
-    const defaultCrate = await db.crateTypes.toCollection().first();
-    if (defaultCrate) {
-      // 5 days ago delivered 10, yesterday collected 4
-      const date5DaysAgo = new Date();
-      date5DaysAgo.setDate(date5DaysAgo.getDate() - 5);
-
-      const dateYesterday = new Date();
-      dateYesterday.setDate(dateYesterday.getDate() - 1);
-
-      await db.transactions.bulkAdd([
-        {
-          clientId: sampleId,
-          crateTypeId: defaultCrate.id,
-          type: 'DELIVERED',
-          quantity: 10,
-          date: date5DaysAgo.toISOString(),
-          notes: 'Carga matutina'
-        },
-        {
-          clientId: sampleId,
-          crateTypeId: defaultCrate.id,
-          type: 'COLLECTED',
-          quantity: 4,
-          date: dateYesterday.toISOString(),
-          notes: 'Devolução parcial'
-        }
-      ]);
-    }
+// Driver authentication and registration helpers
+export async function registerDriver({ name, phone = '', password }) {
+  const cleanName = name.trim();
+  const existing = await db.drivers.where('name').equalsIgnoreCase(cleanName).first();
+  if (existing) {
+    throw new Error('Já existe um entregador cadastrado com este nome.');
   }
+
+  const id = await db.drivers.add({
+    name: cleanName,
+    phone: phone.trim(),
+    password: password.trim(),
+    createdAt: new Date().toISOString()
+  });
+
+  return { id, name: cleanName, phone: phone.trim() };
+}
+
+export async function authenticateDriver({ name, password }) {
+  const cleanName = name.trim();
+  const driver = await db.drivers.where('name').equalsIgnoreCase(cleanName).first();
+  if (!driver) {
+    throw new Error('Entregador não encontrado.');
+  }
+
+  if (driver.password.trim() !== password.trim()) {
+    throw new Error('Senha incorreta.');
+  }
+
+  return { id: driver.id, name: driver.name, phone: driver.phone };
 }
 
 // Calculate balances per client
@@ -75,7 +69,7 @@ export async function getClientBalance(clientId) {
   transactions.forEach(t => {
     const qty = t.type === 'DELIVERED' ? t.quantity : -t.quantity;
     totalBalance += qty;
-    
+
     if (!byType[t.crateTypeId]) {
       byType[t.crateTypeId] = {
         crateTypeId: t.crateTypeId,
@@ -87,7 +81,6 @@ export async function getClientBalance(clientId) {
     byType[t.crateTypeId].balance += qty;
   });
 
-  // Find last transaction date
   let lastTransactionDate = null;
   if (transactions.length > 0) {
     const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -98,6 +91,35 @@ export async function getClientBalance(clientId) {
     totalBalance,
     byType: Object.values(byType),
     lastTransactionDate
+  };
+}
+
+// Hub Returns (Ponto de Devolução / Galpão Central)
+export async function getHubStats() {
+  const hubReturns = await db.hubReturns.toArray();
+  const crateTypes = await db.crateTypes.toArray();
+  const crateMap = new Map(crateTypes.map(c => [c.id, c]));
+
+  let totalBoxesInHub = 0;
+  const byCrateType = {};
+
+  hubReturns.forEach(hr => {
+    totalBoxesInHub += hr.quantity;
+    if (!byCrateType[hr.crateTypeId]) {
+      byCrateType[hr.crateTypeId] = {
+        crateTypeId: hr.crateTypeId,
+        name: crateMap.get(hr.crateTypeId)?.name || 'Outro',
+        color: crateMap.get(hr.crateTypeId)?.color || '#94a3b8',
+        total: 0
+      };
+    }
+    byCrateType[hr.crateTypeId].total += hr.quantity;
+  });
+
+  return {
+    totalBoxesInHub,
+    byCrateType: Object.values(byCrateType),
+    totalDischarges: hubReturns.length
   };
 }
 
@@ -120,7 +142,6 @@ export async function getGlobalStats() {
     const unitVal = crateMap.get(t.crateTypeId)?.unitValue || 0;
     totalEstimatedValue += qty * unitVal;
 
-    // By client
     if (!clientBalances[t.clientId]) {
       clientBalances[t.clientId] = { balance: 0, lastDate: t.date };
     }
@@ -129,7 +150,6 @@ export async function getGlobalStats() {
       clientBalances[t.clientId].lastDate = t.date;
     }
 
-    // By crate type
     if (!crateTypeTotals[t.crateTypeId]) {
       crateTypeTotals[t.crateTypeId] = {
         name: crateMap.get(t.crateTypeId)?.name || 'Outro',
@@ -142,7 +162,6 @@ export async function getGlobalStats() {
 
   const clientsWithDebt = Object.entries(clientBalances).filter(([, val]) => val.balance > 0).length;
 
-  // Stagnant crates (> 7 days without transaction with balance > 0)
   const now = new Date();
   const stagnantClients = [];
   for (const [cId, val] of Object.entries(clientBalances)) {
@@ -179,14 +198,18 @@ export async function exportAllDataJSON() {
   const clients = await db.clients.toArray();
   const crateTypes = await db.crateTypes.toArray();
   const transactions = await db.transactions.toArray();
+  const drivers = await db.drivers.toArray();
+  const hubReturns = await db.hubReturns.toArray();
 
   const backupData = {
     app: 'CaixasNaRua',
-    version: '1.0',
+    version: '2.0',
     exportedAt: new Date().toISOString(),
     clients,
     crateTypes,
-    transactions
+    transactions,
+    drivers,
+    hubReturns
   };
 
   const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -205,7 +228,7 @@ export async function exportCSVReport() {
   const crateTypes = await db.crateTypes.toArray();
   const crateMap = new Map(crateTypes.map(c => [c.id, c]));
 
-  let csv = 'Data,Hora,Cliente,Telefone,Tipo de Vasilhame,Operacao,Quantidade,Observacoes\n';
+  let csv = 'Data,Hora,Cliente,Telefone,Tipo de Vasilhame,Operacao,Quantidade,Entregador,Observacoes\n';
   transactions.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(t => {
     const d = new Date(t.date);
     const dateStr = d.toLocaleDateString('pt-BR');
@@ -215,9 +238,10 @@ export async function exportCSVReport() {
     const phone = client?.phone || '';
     const crateName = (crateMap.get(t.crateTypeId)?.name || 'Vasilhame').replace(/"/g, '""');
     const op = t.type === 'DELIVERED' ? 'DEIXOU (+)' : 'RECOLHEU (-)';
+    const driver = (t.driverName || 'N/A').replace(/"/g, '""');
     const notes = (t.notes || '').replace(/"/g, '""');
 
-    csv += `"${dateStr}","${timeStr}","${clientName}","${phone}","${crateName}","${op}",${t.quantity},"${notes}"\n`;
+    csv += `"${dateStr}","${timeStr}","${clientName}","${phone}","${crateName}","${op}",${t.quantity},"${driver}","${notes}"\n`;
   });
 
   const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
@@ -236,16 +260,24 @@ export async function importDataJSON(jsonString) {
       throw new Error('Arquivo de backup inválido.');
     }
 
-    await db.transaction('rw', db.clients, db.crateTypes, db.transactions, async () => {
+    await db.transaction('rw', db.clients, db.crateTypes, db.transactions, db.drivers, db.hubReturns, async () => {
       await db.clients.clear();
       await db.crateTypes.clear();
       await db.transactions.clear();
+      await db.drivers.clear();
+      await db.hubReturns.clear();
 
       await db.clients.bulkAdd(data.clients);
       if (data.crateTypes && data.crateTypes.length > 0) {
         await db.crateTypes.bulkAdd(data.crateTypes);
       }
       await db.transactions.bulkAdd(data.transactions);
+      if (data.drivers && data.drivers.length > 0) {
+        await db.drivers.bulkAdd(data.drivers);
+      }
+      if (data.hubReturns && data.hubReturns.length > 0) {
+        await db.hubReturns.bulkAdd(data.hubReturns);
+      }
     });
 
     return { success: true };

@@ -18,7 +18,7 @@ import {
   Sparkles
 } from 'lucide-react';
 
-export default function QuickMovement({ onNewClientClick }) {
+export default function QuickMovement({ onNewClientClick, currentDriver }) {
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
   const crateTypes = useLiveQuery(() => db.crateTypes.toArray()) || [];
 
@@ -125,7 +125,9 @@ export default function QuickMovement({ onNewClientClick }) {
         type, // 'DELIVERED' or 'COLLECTED'
         quantity: Number(quantity),
         date: now.toISOString(),
-        notes: notes.trim()
+        notes: notes.trim(),
+        driverId: currentDriver?.id || null,
+        driverName: currentDriver?.name || 'Entregador'
       });
 
       // Recalculate balance for receipt
@@ -138,6 +140,7 @@ export default function QuickMovement({ onNewClientClick }) {
         crateName: selectedCrate?.name || 'Vasilhame',
         quantity: Number(quantity),
         newBalance: updatedBalance.totalBalance,
+        driverName: currentDriver?.name || 'Entregador',
         date: now,
         notes: notes.trim()
       };

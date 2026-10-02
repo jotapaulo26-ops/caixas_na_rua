@@ -184,6 +184,9 @@ export default function ClientDetail({ clientId, onBack, onEditClient }) {
                       ></span>
                       <span>{crate?.name || 'Vasilhame'}</span>
                     </div>
+                    <div className="text-[10px] text-brand-300/90 font-medium">
+                      👤 {isDelivered ? 'Entregue por:' : 'Recolhido por:'} <strong className="text-white">{t.driverName || 'Entregador'}</strong>
+                    </div>
                     {t.notes && <div className="text-[10px] text-slate-400 italic">"{t.notes}"</div>}
                   </div>
                 </div>

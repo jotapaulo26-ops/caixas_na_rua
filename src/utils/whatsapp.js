@@ -4,6 +4,7 @@ export function formatWhatsAppMessage({
   crateName,
   quantity,
   newBalance,
+  driverName = '',
   date = new Date(),
   notes = ''
 }) {
@@ -23,6 +24,9 @@ export function formatWhatsAppMessage({
   message += `${icon} *Operação:* ${opText}\n`;
   message += `📦 *Tipo:* ${crateName}\n`;
   message += `🔢 *Quantidade:* ${quantity} un.\n`;
+  if (driverName) {
+    message += `👤 *Entregador:* ${driverName}\n`;
+  }
   if (notes) {
     message += `📝 *Obs:* ${notes}\n`;
   }

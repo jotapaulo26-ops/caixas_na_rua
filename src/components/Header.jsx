@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Package, WifiOff, PlusCircle, Cloud, LogOut, RefreshCw } from 'lucide-react';
+import { Package, WifiOff, PlusCircle, Cloud, LogOut, RefreshCw, User } from 'lucide-react';
 import { isSupabaseConfigured, subscribeSyncStatus } from '../db/supabase';
 
-export default function Header({ onNewClientClick, onLogout }) {
+export default function Header({ currentDriver, onNewClientClick, onLogout }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncInfo, setSyncInfo] = useState({ isSyncing: false, lastSync: null, error: null });
   const hasCloud = isSupabaseConfigured();
@@ -27,7 +27,7 @@ export default function Header({ onNewClientClick, onLogout }) {
     <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
       <div className="max-w-md mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/30">
+          <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/30 flex-shrink-0">
             <Package className="w-6 h-6 text-white" />
           </div>
           <div>
@@ -35,9 +35,12 @@ export default function Header({ onNewClientClick, onLogout }) {
               <h1 className="text-base font-bold text-white tracking-tight leading-tight">
                 Caixas na Rua
               </h1>
-              <span className="text-[10px] font-semibold text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
-                Jançanti
-              </span>
+              {currentDriver && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-300 bg-brand-950/80 px-1.5 py-0.5 rounded border border-brand-800 truncate max-w-[100px]">
+                  <User className="w-2.5 h-2.5" />
+                  {currentDriver.name}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 mt-0.5">
@@ -81,7 +84,7 @@ export default function Header({ onNewClientClick, onLogout }) {
 
           <button
             onClick={onLogout}
-            title="Sair do aplicativo"
+            title="Trocar de entregador / Sair"
             className="p-2 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 active:scale-95 rounded-xl border border-slate-700 transition"
           >
             <LogOut className="w-4 h-4" />

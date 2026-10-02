@@ -5,6 +5,7 @@ import QuickMovement from './components/QuickMovement';
 import ClientList from './components/ClientList';
 import ClientDetail from './components/ClientDetail';
 import ClientModal from './components/ClientModal';
+import HubReturn from './components/HubReturn';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import Login from './components/Login';
@@ -14,24 +15,32 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db/db';
 
 export default function App() {
+  const [currentDriver, setCurrentDriver] = useState(() => {
+    try {
+      const stored = localStorage.getItem('caixas_auth_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return Boolean(localStorage.getItem('caixas_auth_token'));
   });
 
-  const [activeTab, setActiveTab] = useState('quick'); // 'quick', 'clients', 'dashboard', 'settings'
+  const [activeTab, setActiveTab] = useState('quick'); // 'quick', 'clients', 'hub', 'dashboard', 'settings'
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [clientToEdit, setClientToEdit] = useState(null);
   const [alertCount, setAlertCount] = useState(0);
 
-  // Initialize defaults on mount
+  // Initialize defaults and auto-sync on mount
   useEffect(() => {
     initDatabaseDefaults();
-    // Auto-sync pending data on mount
     triggerAutoSync();
   }, []);
 
-  // Update alert count for bottom nav badge
+  // Update alert count for stagnant crates
   const transactions = useLiveQuery(() => db.transactions.toArray()) || [];
   const clients = useLiveQuery(() => db.clients.toArray()) || [];
 
@@ -41,9 +50,17 @@ export default function App() {
     });
   }, [transactions, clients]);
 
+  const handleLoginSuccess = (driver) => {
+    setCurrentDriver(driver);
+    setIsAuthenticated(true);
+    triggerAutoSync();
+  };
+
   const handleLogout = () => {
-    if (window.confirm('Deseja sair e bloquear o aplicativo?')) {
+    if (window.confirm('Deseja trocar de entregador ou sair do aplicativo?')) {
       localStorage.removeItem('caixas_auth_token');
+      localStorage.removeItem('caixas_auth_user');
+      setCurrentDriver(null);
       setIsAuthenticated(false);
     }
   };
@@ -62,15 +79,16 @@ export default function App() {
     setSelectedClientId(id);
   };
 
-  // If user is not logged in, display the Login screen
+  // If user is not authenticated, render Login / Register screen
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
+    return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none antialiased">
-      {/* Top Header with Logout and User badge */}
+      {/* Top Header */}
       <Header
+        currentDriver={currentDriver}
         onNewClientClick={handleOpenNewClient}
         onLogout={handleLogout}
       />
@@ -86,13 +104,19 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'quick' && (
-              <QuickMovement onNewClientClick={handleOpenNewClient} />
+              <QuickMovement
+                onNewClientClick={handleOpenNewClient}
+                currentDriver={currentDriver}
+              />
             )}
             {activeTab === 'clients' && (
               <ClientList
                 onSelectClient={handleSelectClient}
                 onNewClientClick={handleOpenNewClient}
               />
+            )}
+            {activeTab === 'hub' && (
+              <HubReturn currentDriver={currentDriver} />
             )}
             {activeTab === 'dashboard' && (
               <Dashboard onSelectClient={handleSelectClient} />
@@ -102,7 +126,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Thumb Navigation Bar */}
+      {/* Bottom Navigation with 5 tabs */}
       <BottomNav
         activeTab={selectedClientId ? 'clients' : activeTab}
         onChangeTab={(tab) => {

@@ -47,7 +47,6 @@ export function getSupabaseClient() {
 
 export const isSupabaseConfigured = () => getSupabaseConfig().isConfigured;
 
-// Estado reativo da sincronização em segundo plano
 let isSyncingInBackground = false;
 let lastSyncTimestamp = null;
 let lastSyncError = null;
@@ -64,10 +63,6 @@ function notifySyncListeners() {
   syncListeners.forEach(cb => cb(status));
 }
 
-/**
- * Gatilho de Sincronização Automática em Segundo Plano
- * Executado após cada movimentação, cadastro ou quando a internet voltar
- */
 export async function triggerAutoSync() {
   if (isSyncingInBackground) return;
   if (!isSupabaseConfigured() || !navigator.onLine) return;
@@ -92,17 +87,12 @@ export async function triggerAutoSync() {
   }
 }
 
-// Inicia listeners automáticos quando a conexão restabelecer
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    console.log('[AutoSync] Conexão restabelecida. Sincronizando dados...');
     triggerAutoSync();
   });
 }
 
-/**
- * Testa a conexão com o banco Supabase
- */
 export async function testSupabaseConnection() {
   const client = getSupabaseClient();
   if (!client) {
@@ -126,9 +116,6 @@ export async function testSupabaseConnection() {
   }
 }
 
-/**
- * Envia todos os dados locais do IndexedDB para o Supabase
- */
 export async function syncLocalToSupabase() {
   const client = getSupabaseClient();
   if (!client) {
@@ -139,6 +126,8 @@ export async function syncLocalToSupabase() {
     const clients = await db.clients.toArray();
     const crateTypes = await db.crateTypes.toArray();
     const transactions = await db.transactions.toArray();
+    const drivers = await db.drivers.toArray();
+    const hubReturns = await db.hubReturns.toArray();
 
     // 1. Tipos de caixas
     if (crateTypes.length > 0) {
@@ -149,11 +138,24 @@ export async function syncLocalToSupabase() {
         unit_value: c.unitValue || 0,
         is_default: Boolean(c.isDefault)
       }));
-      const { error: errTypes } = await client.from('crate_types').upsert(payloadTypes, { onConflict: 'id' });
-      if (errTypes) throw errTypes;
+      const { error } = await client.from('crate_types').upsert(payloadTypes, { onConflict: 'id' });
+      if (error) throw error;
     }
 
-    // 2. Clientes
+    // 2. Entregadores / Usuários
+    if (drivers.length > 0) {
+      const payloadDrivers = drivers.map(d => ({
+        id: d.id,
+        name: d.name,
+        phone: d.phone || '',
+        password: d.password,
+        created_at: d.createdAt || new Date().toISOString()
+      }));
+      const { error } = await client.from('drivers').upsert(payloadDrivers, { onConflict: 'id' });
+      if (error && error.code !== '42P01') throw error;
+    }
+
+    // 3. Clientes
     if (clients.length > 0) {
       const payloadClients = clients.map(c => ({
         id: c.id,
@@ -163,11 +165,11 @@ export async function syncLocalToSupabase() {
         notes: c.notes || '',
         created_at: c.createdAt || new Date().toISOString()
       }));
-      const { error: errClients } = await client.from('clients').upsert(payloadClients, { onConflict: 'id' });
-      if (errClients) throw errClients;
+      const { error } = await client.from('clients').upsert(payloadClients, { onConflict: 'id' });
+      if (error) throw error;
     }
 
-    // 3. Movimentações
+    // 4. Movimentações com dados do entregador
     if (transactions.length > 0) {
       const payloadTrans = transactions.map(t => ({
         id: t.id,
@@ -176,10 +178,27 @@ export async function syncLocalToSupabase() {
         type: t.type,
         quantity: t.quantity,
         date: t.date,
-        notes: t.notes || ''
+        notes: t.notes || '',
+        driver_id: t.driverId || null,
+        driver_name: t.driverName || 'Entregador'
       }));
-      const { error: errTrans } = await client.from('transactions').upsert(payloadTrans, { onConflict: 'id' });
-      if (errTrans) throw errTrans;
+      const { error } = await client.from('transactions').upsert(payloadTrans, { onConflict: 'id' });
+      if (error) throw error;
+    }
+
+    // 5. Ponto de Devolução (Galpão Central)
+    if (hubReturns.length > 0) {
+      const payloadHub = hubReturns.map(h => ({
+        id: h.id,
+        driver_id: h.driverId || null,
+        driver_name: h.driverName || 'Entregador',
+        crate_type_id: h.crateTypeId,
+        quantity: h.quantity,
+        date: h.date,
+        notes: h.notes || ''
+      }));
+      const { error } = await client.from('hub_returns').upsert(payloadHub, { onConflict: 'id' });
+      if (error && error.code !== '42P01') throw error;
     }
 
     lastSyncTimestamp = new Date();
@@ -190,9 +209,6 @@ export async function syncLocalToSupabase() {
   }
 }
 
-/**
- * Baixa todos os dados do Supabase para o IndexedDB local
- */
 export async function syncSupabaseToLocal() {
   const client = getSupabaseClient();
   if (!client) {
@@ -200,16 +216,13 @@ export async function syncSupabaseToLocal() {
   }
 
   try {
-    const { data: remoteTypes, error: errTypes } = await client.from('crate_types').select('*');
-    if (errTypes) throw errTypes;
+    const { data: remoteTypes } = await client.from('crate_types').select('*');
+    const { data: remoteDrivers } = await client.from('drivers').select('*');
+    const { data: remoteClients } = await client.from('clients').select('*');
+    const { data: remoteTrans } = await client.from('transactions').select('*');
+    const { data: remoteHub } = await client.from('hub_returns').select('*');
 
-    const { data: remoteClients, error: errClients } = await client.from('clients').select('*');
-    if (errClients) throw errClients;
-
-    const { data: remoteTrans, error: errTrans } = await client.from('transactions').select('*');
-    if (errTrans) throw errTrans;
-
-    await db.transaction('rw', db.clients, db.crateTypes, db.transactions, async () => {
+    await db.transaction('rw', db.clients, db.crateTypes, db.transactions, db.drivers, db.hubReturns, async () => {
       if (remoteTypes && remoteTypes.length > 0) {
         for (const rt of remoteTypes) {
           await db.crateTypes.put({
@@ -218,6 +231,18 @@ export async function syncSupabaseToLocal() {
             color: rt.color,
             unitValue: rt.unit_value,
             isDefault: rt.is_default
+          });
+        }
+      }
+
+      if (remoteDrivers && remoteDrivers.length > 0) {
+        for (const rd of remoteDrivers) {
+          await db.drivers.put({
+            id: rd.id,
+            name: rd.name,
+            phone: rd.phone,
+            password: rd.password,
+            createdAt: rd.created_at
           });
         }
       }
@@ -244,7 +269,23 @@ export async function syncSupabaseToLocal() {
             type: rt.type,
             quantity: rt.quantity,
             date: rt.date,
-            notes: rt.notes
+            notes: rt.notes,
+            driverId: rt.driver_id,
+            driverName: rt.driver_name
+          });
+        }
+      }
+
+      if (remoteHub && remoteHub.length > 0) {
+        for (const rh of remoteHub) {
+          await db.hubReturns.put({
+            id: rh.id,
+            driverId: rh.driver_id,
+            driverName: rh.driver_name,
+            crateTypeId: rh.crate_type_id,
+            quantity: rh.quantity,
+            date: rh.date,
+            notes: rh.notes
           });
         }
       }
