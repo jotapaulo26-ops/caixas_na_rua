@@ -8,8 +8,8 @@ export function getSupabaseConfig() {
   const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) : '';
   const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_KEY) : '';
 
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || 'https://hrpbipgmtaeabcpghqdv.supabase.co';
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_RPvXaN4e2zrpoBG6jjgVXw_uqrpEsK9';
 
   const url = (localUrl || envUrl).trim();
   const key = (localKey || envKey).trim();
@@ -120,7 +120,7 @@ export async function testSupabaseConnection() {
   try {
     const { data, error } = await client.from('crate_types').select('id').limit(1);
     if (error) {
-      if (error.code === '42P01') {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
         return {
           success: false,
           error: 'Conexão OK, mas as tabelas ainda não foram criadas no Supabase! Execute o script supabase_schema.sql no SQL Editor.'
