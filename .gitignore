@@ -7,7 +7,7 @@ node_modules
 coverage
 
 # Production
-dist
+# dist (versionado para deploy garantido)
 build
 
 # Misc
