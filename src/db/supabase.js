@@ -72,12 +72,16 @@ export async function triggerAutoSync() {
   notifySyncListeners();
 
   try {
-    const res = await syncLocalToSupabase();
-    if (res.success) {
+    // 1. Sobe alterações feitas localmente para a nuvem
+    const pushRes = await syncLocalToSupabase();
+    // 2. Baixa dados novos cadastrados por outros entregadores na nuvem
+    const pullRes = await syncSupabaseToLocal();
+
+    if (pushRes.success && pullRes.success) {
       lastSyncTimestamp = new Date();
       lastSyncError = null;
     } else {
-      lastSyncError = res.error || res.reason;
+      lastSyncError = pushRes.error || pullRes.error || pushRes.reason || pullRes.reason;
     }
   } catch (err) {
     lastSyncError = err.message;
@@ -91,6 +95,20 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     triggerAutoSync();
   });
+
+  // Sincroniza ao reabrir ou focar no aplicativo no celular
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      triggerAutoSync();
+    }
+  });
+
+  // Sincronização periódica em segundo plano a cada 45 segundos
+  setInterval(() => {
+    if (navigator.onLine && isSupabaseConfigured()) {
+      triggerAutoSync();
+    }
+  }, 45000);
 }
 
 export async function testSupabaseConnection() {

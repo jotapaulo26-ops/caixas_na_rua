@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, getHubStats } from '../db/db';
+import { db, getHubStats, generateUniqueId } from '../db/db';
 import { triggerAutoSync } from '../db/supabase';
 import {
   Warehouse,
@@ -61,6 +61,7 @@ export default function HubReturn({ currentDriver }) {
       const now = new Date();
 
       await db.hubReturns.add({
+        id: generateUniqueId(),
         driverId: currentDriver?.id || null,
         driverName: currentDriver?.name || 'Entregador',
         crateTypeId: Number(selectedCrateTypeId),

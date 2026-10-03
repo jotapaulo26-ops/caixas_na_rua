@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, getClientBalance } from '../db/db';
+import { db, getClientBalance, generateUniqueId } from '../db/db';
 import { triggerAutoSync } from '../db/supabase';
 import { formatWhatsAppMessage, openWhatsAppLink } from '../utils/whatsapp';
 import {
@@ -82,7 +82,9 @@ export default function QuickMovement({ onNewClientClick, currentDriver }) {
     if (!newCatName.trim()) return;
 
     try {
-      const newId = await db.crateTypes.add({
+      const newId = generateUniqueId();
+      await db.crateTypes.add({
+        id: newId,
         name: newCatName.trim(),
         color: newCatColor,
         unitValue: parseFloat(newCatValue) || 0,
@@ -120,6 +122,7 @@ export default function QuickMovement({ onNewClientClick, currentDriver }) {
     try {
       const now = new Date();
       await db.transactions.add({
+        id: generateUniqueId(),
         clientId: Number(selectedClientId),
         crateTypeId: Number(selectedCrateTypeId),
         type, // 'DELIVERED' or 'COLLECTED'

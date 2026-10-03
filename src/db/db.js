@@ -12,15 +12,20 @@ db.version(2).stores({
 });
 
 // Seed initial crate types if database is fresh
+export function generateUniqueId() {
+  // Gera um ID numérico único de 16 dígitos compatível com JS Number e PostgreSQL BIGINT
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
+
 export async function initDatabaseDefaults() {
   const count = await db.crateTypes.count();
   if (count === 0) {
     await db.crateTypes.bulkAdd([
-      { name: 'Caixa Hortifrúti (Plástica)', color: '#22c55e', unitValue: 35.0, isDefault: true },
-      { name: 'Engradado de Bebidas', color: '#3b82f6', unitValue: 40.0, isDefault: true },
-      { name: 'Garrafão de Água 20L', color: '#06b6d4', unitValue: 25.0, isDefault: true },
-      { name: 'Palete de Madeira', color: '#f59e0b', unitValue: 60.0, isDefault: false },
-      { name: 'Caixa Térmica / Isopor', color: '#ec4899', unitValue: 50.0, isDefault: false },
+      { id: 1, name: 'Caixa Hortifrúti (Plástica)', color: '#22c55e', unitValue: 35.0, isDefault: true },
+      { id: 2, name: 'Engradado de Bebidas', color: '#3b82f6', unitValue: 40.0, isDefault: true },
+      { id: 3, name: 'Garrafão de Água 20L', color: '#06b6d4', unitValue: 25.0, isDefault: true },
+      { id: 4, name: 'Palete de Madeira', color: '#f59e0b', unitValue: 60.0, isDefault: false },
+      { id: 5, name: 'Caixa Térmica / Isopor', color: '#ec4899', unitValue: 50.0, isDefault: false },
     ]);
   }
 }
@@ -33,7 +38,9 @@ export async function registerDriver({ name, phone = '', password }) {
     throw new Error('Já existe um entregador cadastrado com este nome.');
   }
 
-  const id = await db.drivers.add({
+  const id = generateUniqueId();
+  await db.drivers.add({
+    id,
     name: cleanName,
     phone: phone.trim(),
     password: password.trim(),

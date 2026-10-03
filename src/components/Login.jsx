@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, registerDriver, authenticateDriver } from '../db/db';
-import { triggerAutoSync } from '../db/supabase';
+import { triggerAutoSync, syncSupabaseToLocal, isSupabaseConfigured } from '../db/supabase';
 import { Package, Lock, User, Phone, ArrowRight, UserPlus, LogIn, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function Login({ onLoginSuccess }) {
@@ -22,6 +22,13 @@ export default function Login({ onLoginSuccess }) {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Baixa os entregadores da nuvem logo ao abrir a tela
+  useEffect(() => {
+    if (isSupabaseConfigured() && navigator.onLine) {
+      syncSupabaseToLocal().catch(() => {});
+    }
+  }, []);
+
   // If no drivers exist at all, auto switch to register mode
   useEffect(() => {
     if (drivers && drivers.length === 0) {
@@ -35,7 +42,18 @@ export default function Login({ onLoginSuccess }) {
     setIsLoading(true);
 
     try {
-      const driver = await authenticateDriver({ name: loginName, password: loginPass });
+      let driver;
+      try {
+        driver = await authenticateDriver({ name: loginName, password: loginPass });
+      } catch (firstErr) {
+        if (isSupabaseConfigured() && navigator.onLine) {
+          await syncSupabaseToLocal();
+          driver = await authenticateDriver({ name: loginName, password: loginPass });
+        } else {
+          throw firstErr;
+        }
+      }
+
       localStorage.setItem('caixas_auth_user', JSON.stringify(driver));
       localStorage.setItem('caixas_auth_token', 'driver_' + driver.id);
       setIsLoading(false);

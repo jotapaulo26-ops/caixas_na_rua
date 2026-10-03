@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../db/db';
+import { db, generateUniqueId } from '../db/db';
 import { triggerAutoSync } from '../db/supabase';
 import { X, Save, Trash2, Store, Phone, MapPin, FileText } from 'lucide-react';
 
@@ -44,7 +44,9 @@ export default function ClientModal({ isOpen, onClose, clientToEdit = null, onSa
         });
         if (onSaved) onSaved(clientToEdit.id);
       } else {
-        const newId = await db.clients.add({
+        const newId = generateUniqueId();
+        await db.clients.add({
+          id: newId,
           name: name.trim(),
           phone: phone.trim(),
           address: address.trim(),
